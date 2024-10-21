@@ -3,36 +3,61 @@ import threading
 
 # 클라이언트 목록을 저장할 리스트
 clients = []
+nicknames = []
 
-def handle_client(client_socket, address):
-    # 클라이언트 접속 처리
-    nickname = client_socket.recv(1024).decode()  # 닉네임 수신
-    print(f"클라이언트 {nickname} ({address})가 접속했습니다.")
-    clients.append(nickname)
 
-    # 계속해서 클라이언트와 통신
+# 브로드캐스트 함수 (모든 클라이언트에게 메시지 전송)
+def broadcast(message):
+    for client in clients:
+        client.send(message)
+
+
+def handle_client(client_socket):
     while True:
         try:
-            message = client_socket.recv(1024).decode()
-            if message:
-                print(f"{nickname}: {message}")
+            # 클라이언트로부터 메시지 수신
+            message = client_socket.recv(1024)
+            broadcast(message)  # 받은 메시지를 다른 클라이언트에게 브로드캐스트
         except:
-            print(f"{nickname}가 연결을 끊었습니다.")
-            clients.remove(nickname)
+            # 연결이 끊긴 클라이언트 처리
+            index = clients.index(client_socket)
+            clients.remove(client_socket)
             client_socket.close()
+            nickname = nicknames[index]
+            broadcast(f'{nickname}님이 퇴장하셨습니다.'.encode())
+            nicknames.remove(nickname)
             break
 
+
+# 서버 시작 함수
 def start_host():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('0.0.0.0', 12345))
-    server_socket.listen(5)
+    server_socket.bind(('0.0.0.0', 12345))  # 모든 IP에서 연결 허용
+    server_socket.listen()
+
     print("서버가 시작되었습니다. 클라이언트 연결을 기다립니다...")
 
     while True:
+        # 클라이언트 연결 수락
         client_socket, address = server_socket.accept()
-        # 클라이언트가 접속할 때마다 스레드 생성
-        client_thread = threading.Thread(target=handle_client, args=(client_socket, address))
-        client_thread.start()
+        print(f"클라이언트가 연결되었습니다: {address}")
+
+        # 닉네임 요청 및 수신
+        client_socket.send('NICK'.encode())
+        nickname = client_socket.recv(1024).decode()
+
+        # 닉네임과 클라이언트 소켓을 리스트에 저장
+        nicknames.append(nickname)
+        clients.append(client_socket)
+
+        print(f"닉네임: {nickname}")
+        broadcast(f"{nickname}님이 경매에 참여하셨습니다!".encode())
+        client_socket.send("경매 서버에 접속되었습니다!".encode())
+
+        # 클라이언트의 메시지를 처리하는 스레드 생성
+        thread = threading.Thread(target=handle_client, args=(client_socket,))
+        thread.start()
+
 
 def show_menu():
     while True:
